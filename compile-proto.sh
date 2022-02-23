@@ -11,10 +11,10 @@
 mkdir -p dist
 mkdir -p dist/proto
 
-PROTOC_GEN_TS_PATH="./node_modules/.bin/protoc-gen-ts"
-PROTOC_GEN_GRPC_PATH="./node_modules/.bin/grpc_tools_node_protoc_plugin"
-PROTOC="./node_modules/.bin/grpc_tools_node_protoc"
-JS_OUT_DIR="./dist"
+PROTOC_GEN_TS_PATH=".\\node_modules\\.bin\\protoc-gen-ts.cmd"
+PROTOC_GEN_GRPC_PATH=".\\node_modules\\.bin\\grpc_tools_node_protoc_plugin.cmd"
+PROTOC=".\\node_modules\\.bin\\grpc_tools_node_protoc"
+JS_OUT_DIR=".\\dist"
 TS_OUT_DIR="."
 OUT_DIR="."
 

@@ -38,8 +38,8 @@ message RouteNote {
 }
 
 message RouteSummary {
-    int32 pointCount = 1;
-    int32 featureCount = 2;
+    int32 pointcount = 1;
+    int32 featurecount = 2;
     int32 distance = 3;
-    int32 elapsedTime = 4;
+    int32 elapsedtime = 4;
 }

@@ -7,6 +7,11 @@ import * as grpc from '@grpc/grpc-js';
 import { RouteGuideClient } from './proto/route_guide_grpc_pb';
 import { Point, Rectangle, Feature, RouteNote, RouteSummary } from './proto/route_guide_pb';
 
+interface IRouteNote {
+    message: string,
+    location: Point
+}
+
 const client = new RouteGuideClient('0.0.0.0:50051', grpc.credentials.createInsecure());
 const COORD_FACTOR = 1e7;
 
@@ -18,21 +23,39 @@ function runGetFeature() {
     const point2 = new Point();
     point2.setLatitude(0);
     point2.setLongitude(0);
-    client.getFeature(        
-        point1, 
+
+    ////////////////////////////
+    const location1 = new RouteNote();
+    location1.setLocation(point1);
+    console.log(location1.getLocation());
+
+
+    const location2 = new RouteNote();
+    location2.setLocation(point2);
+    console.log(location2.getLocation());
+    ////////////////////////////
+
+    client.getFeature(
+        point1,
         (error: grpc.ServiceError | null, feature?: Feature) => {
-            if(feature === undefined) {
+            if (feature === undefined) {
                 return;
             }
 
-            if(feature.getName() === '') {
-                console.log('Found no feature at ' + 
-                    feature.getLocation().getLatitude() / COORD_FACTOR + ', ' +
-                    feature.getLocation().getLongitude() / COORD_FACTOR
+            const location = feature.getLocation();
+
+            if (location === null || location === undefined) {
+                return;
+            }
+
+            if (feature.getName() === '') {
+                console.log('Found no feature at ' +
+                    location.getLatitude() / COORD_FACTOR + ', ' +
+                    location.getLongitude() / COORD_FACTOR
                 );
             } else {
                 console.log(
-                    `Found feature called "${feature.getName()}" at ${feature.getLocation().getLatitude() / COORD_FACTOR}, ${feature.getLocation().getLongitude()}`
+                    `Found feature called "${feature.getName()}" at ${location.getLatitude() / COORD_FACTOR}, ${location.getLongitude()}`
                 );
             }
         }
@@ -52,14 +75,19 @@ function runListFeatures() {
     rect.setHi(hi);
     console.log('Looking for features between 40, -75 and 42, -73');
     const call = client.listFeatures(rect);
-    call.on('data', (feature:Feature) => {
-        console.log('Found feature called "' + feature.getName() + '" at ' + 
-            feature.getLocation().getLatitude() / COORD_FACTOR + ', ' + 
-            feature.getLocation().getLongitude() / COORD_FACTOR
+    call.on('data', (feature: Feature) => {
+
+        const location = feature.getLocation();
+        if (location === null || location === undefined) {
+            return;
+        }
+        console.log('Found feature called "' + feature.getName() + '" at ' +
+            location.getLatitude() / COORD_FACTOR + ', ' +
+            location.getLongitude() / COORD_FACTOR
         );
     });
 
-    call.on('end', ()=>{});
+    call.on('end', () => { });
 }
 
 function runRecordRoute() {
@@ -68,10 +96,10 @@ function runRecordRoute() {
     });
 
     fs.readFile(path.resolve(argv.db_path), (err, data) => {
-        if(err) {
-            return;   
+        if (err) {
+            return;
         }
-        
+
         const jsonToProto: Feature[] = [];
         JSON.parse(data.toString()).forEach((data: any) => {
             let featureData = new Feature();
@@ -84,12 +112,18 @@ function runRecordRoute() {
             jsonToProto.push(featureData);
         });
 
-        const featureList = _.map(jsonToProto, (value: Feature) =>{
+        const featureList = _.map(jsonToProto, (value: Feature) => {
+
+            const valueLocation = value.getLocation();
+            if (valueLocation === null || valueLocation === undefined) {
+                return;
+            }
+
             const feature = new Feature();
             feature.setName(value.getName());
             const location = new Point();
-            location.setLatitude(value.getLocation().getLatitude());
-            location.setLongitude(value.getLocation().getLongitude());
+            location.setLatitude(valueLocation.getLatitude());
+            location.setLongitude(valueLocation.getLongitude());
             feature.setLocation(location);
             return feature;
         });
@@ -97,9 +131,9 @@ function runRecordRoute() {
         const numPoint = 10;
         const call = client.recordRoute((error: grpc.ServiceError | null, state?: RouteSummary) => {
 
-            console.log('client', state);
-            if(error) {
-                console.log(error.message);
+            console.log(state?.toString());
+            if (error) {
+                console.log(error);
                 return;
             }
 
@@ -111,18 +145,23 @@ function runRecordRoute() {
 
         function pointSender(location: Point) {
             return function (callback: any) {
-                console.log('Visiting point ' + location.getLatitude() / COORD_FACTOR + 
+                console.log('Visiting point ' + location.getLatitude() / COORD_FACTOR +
                     ', ' + location.getLongitude() / COORD_FACTOR
                 );
                 call.write(location);
-                _.delay(callback, _.random(500,1500));
+                _.delay(callback, _.random(500, 1500));
             };
         }
 
         let pointSenders = [];
-        for(let i = 0; i < numPoint; i++) {
+        for (let i = 0; i < numPoint; i++) {
             const randPoint = featureList[_.random(0, featureList.length - 1)];
-            pointSenders[i] = pointSender(randPoint.getLocation());
+            const location = randPoint?.getLocation();
+            if (location === null || location === undefined) {
+                return;
+            }
+
+            pointSenders[i] = pointSender(location);
         }
         async.series(pointSenders, () => {
             call.end();
@@ -133,50 +172,58 @@ function runRecordRoute() {
 function runRoutechat() {
     const call = client.routeChat();
     call.on('data', (note: RouteNote) => {
-        console.log('Got message "' + note.getMessage() + '" at ' + 
-            note.getLocation().getLatitude() + ', ' + 
-            note.getLocation().getLongitude()
+        const noteLocation = note.getLocation();
+        if (noteLocation === null || noteLocation === undefined) {
+            return;
+        }
+        console.log('Got message "' + note.getMessage() + '" at ' +
+            noteLocation.getLatitude() + ', ' +
+            noteLocation.getLongitude()
         );
     });
-    
+
+    call.on('end', () => { });
+
     const notes = [{
         location: {
-          latitude: 0,
-          longitude: 0
+            latitude: 0,
+            longitude: 0
         },
         message: 'First message'
-      }, {
+    }, {
         location: {
-          latitude: 0,
-          longitude: 1
+            latitude: 0,
+            longitude: 1
         },
         message: 'Second message'
-      }, {
+    }, {
         location: {
-          latitude: 1,
-          longitude: 0
+            latitude: 1,
+            longitude: 0
         },
         message: 'Third message'
-      }, {
+    }, {
         location: {
-          latitude: 0,
-          longitude: 0
+            latitude: 0,
+            longitude: 0
         },
         message: 'Fourth message'
-      }];
+    }];
 
-    for(let i = 0; i < notes.length; i++) {
+    for (let i = 0; i < notes.length; i++) {
         const note = notes[i];
-        console.log('Sending message "' + note.message + '" at ' + 
+        console.log('Sending message "' + note.message + '" at ' +
             note.location.latitude + ', ' + note.location.longitude
         );
-        const noteMsg = new RouteNote();
+        const noteMsg: RouteNote = new RouteNote();
         noteMsg.setMessage(note.message);
 
-        const location = new Point();
-        location.setLatitude(note.location.latitude);
-        location.setLongitude(note.location.longitude);
-        noteMsg.setLocation(location);
+        const point = new Point();
+        point.setLatitude(+note.location.latitude);
+        point.setLongitude(+note.location.longitude);
+        console.log(point.getLongitude() === null);
+        noteMsg.setLocation(point);
+        console.log(noteMsg.getLocation());
         call.write(noteMsg);
     }
     call.end();
@@ -186,11 +233,11 @@ function runRoutechat() {
 function main() {
     runGetFeature();
     // runListFeatures();
-    runRecordRoute();
+    // runRecordRoute();
     // runRoutechat();
 }
 
-if(require.main === module) {
+if (require.main === module) {
     main();
 }
 
